@@ -14,19 +14,28 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
+/**
+ * Implementation of a Web Interface using Java's built-in HttpServer.
+ * It allows the user to control the file explorer via a browser (localhost:8001).
+ */
 public class HttpInterface extends AbstractInterface implements HttpHandler {
     private HttpServer server;
     private ExecutorService threadPool;
     private boolean serverShouldClose;
 
+    /**
+     * Initializes the HTTP server on port 8001.
+     */
     public HttpInterface(IExplorerController controller) {
         super(controller);
-
         serverShouldClose = false;
         
         try {
+            // Create server listening on all network interfaces (0.0.0.0) port 8001
             server = HttpServer.create(new InetSocketAddress("0.0.0.0", 8001), 0);
             server.createContext("/", this);
+            
+            // Use a single thread to handle requests sequentially
             threadPool = Executors.newFixedThreadPool(1);
             server.setExecutor(threadPool);
         } catch (IOException e) {
@@ -36,23 +45,35 @@ public class HttpInterface extends AbstractInterface implements HttpHandler {
         }
     }
 
+    /**
+     * Starts the server and blocks the main thread until the user types 'exit'.
+     */
     public void run() {
         assert server != null;
         server.start();
         System.out.println("Server listening on http://localhost:8001");
+        
         try {
+            // Loop until the 'exit' command sets serverShouldClose to true
             while (!serverShouldClose)
                 Thread.sleep(200);
             System.out.println("Server closed");
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+        
+        // Cleanup resources
         server.stop(1);
         threadPool.shutdownNow();
     }
 
+    /**
+     * Main handler for incoming HTTP requests.
+     * Dispatches requests based on the HTTP method (GET or POST).
+     */
     @Override
     public void handle(HttpExchange exchange) throws IOException {
+        // 1. POST request on /execute -> Run a command
         if ("POST".equals(exchange.getRequestMethod())) {
             URI uri = exchange.getRequestURI();
             if ("/execute".equals(uri.getPath())) {
@@ -61,6 +82,7 @@ public class HttpInterface extends AbstractInterface implements HttpHandler {
             }
         }
 
+        // 2. GET request -> Serve the HTML page
         if ("GET".equals(exchange.getRequestMethod())) {
             handleGetDefault(exchange);
             return;
@@ -69,32 +91,43 @@ public class HttpInterface extends AbstractInterface implements HttpHandler {
         handleError(exchange);
     }
 
+    /**
+     * Serves the HTML frontend page to the browser.
+     */
     private void handleGetDefault(HttpExchange exchange) throws IOException {
         OutputStream stream = exchange.getResponseBody();
         String htmlResponse = constructWebPage();
+        
         exchange.sendResponseHeaders(200, htmlResponse.length());
         stream.write(htmlResponse.getBytes());
         stream.flush();
         stream.close();
     }
 
+    /**
+     * Reads the command from the request body, executes it via the Controller,
+     * and sends the result back to the browser.
+     */
     private void handlePostExecute(HttpExchange exchange) throws IOException {
         assert controller != null;
         
         InputStream inStream = exchange.getRequestBody();
         OutputStream outStream = exchange.getResponseBody();
 
+        // Read the command string sent by the JavaScript frontend
         String command = new String(inStream.readAllBytes(), StandardCharsets.UTF_8);
 
         String response = "";
         if ("exit".equals(command)) {
             System.out.println("Closing server...");
             response = "Server closed";
-            serverShouldClose = true;
+            serverShouldClose = true; // Signal the run() loop to stop
         }
         else
+            // Delegate execution to the controller
             response = controller.executeCommand(command);
 
+        // Send response back
         exchange.sendResponseHeaders(200, response.length());
         outStream.write(response.getBytes());
         outStream.flush();
@@ -106,6 +139,9 @@ public class HttpInterface extends AbstractInterface implements HttpHandler {
         exchange.close();   
     }
 
+    /**
+     * Returns the raw HTML/CSS/JS string that makes up the user interface.
+     */
     private String constructWebPage() {
         return """
             <!DOCTYPE html>
