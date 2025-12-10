@@ -36,3 +36,5 @@ java -cp classes com.esiea.pootd2.ExplorerApp
 To launch the interface via a web browser:
 java -cp classes com.esiea.pootd2.ExplorerApp http
 Once launched, open your browser at: http://localhost:8001
+
+![UML](TD2UML.png)
